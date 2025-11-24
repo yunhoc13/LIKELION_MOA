@@ -218,6 +218,25 @@ Category-specific options (see section 6).
 
 Tap category chips on top → filter feed (e.g., only Study activities).
 
+5.2.1.
+
+Create post button
+
+When "+" button clicked, direct to a page where a user can choose out of 4 categories and add details to it
+
+The flow goes like this: 
+Button clicked -> direct to a create activity page -> user choose category -> user adds details -> click on create post  -> post created on following category that user chose. 
+
+Options or details that user can put when creating a new post:
+    Title name
+    Location
+    Time (start&end)
+    number of participants
+    any written description
+    activity name
+    
+    
+
 5.3 Category Tab Flow
 
 Category Tab screen:

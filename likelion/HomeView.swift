@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedTab: Int = 0
+    @State private var showCreateActivity: Bool = false
 
     var body: some View {
         ZStack {
@@ -81,7 +82,7 @@ struct HomeView: View {
                 HStack {
                     Spacer()
 
-                    Button(action: {}) {
+                    Button(action: { showCreateActivity = true }) {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 56))
                             .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
@@ -91,6 +92,9 @@ struct HomeView: View {
                     .padding(.bottom, 90)
                 }
             }
+        }
+        .navigationDestination(isPresented: $showCreateActivity) {
+            CreateActivityWrapperView(isPresented: $showCreateActivity)
         }
     }
 }
@@ -110,6 +114,169 @@ struct TabBarItem: View {
         }
         .foregroundColor(isSelected ? Color(red: 0.4, green: 0.3, blue: 0.8) : .gray)
         .frame(maxWidth: .infinity)
+    }
+}
+
+// Create Activity Wrapper - Shows category selection first
+struct CreateActivityWrapperView: View {
+    @Binding var isPresented: Bool
+    @State private var selectedCategory: Activity.ActivityCategory?
+    @Environment(\.dismiss) var dismiss
+
+    var body: some View {
+        NavigationStack {
+            if let category = selectedCategory {
+                // Show form with selected category
+                CreateActivityView(category: category, isPresented: $isPresented)
+            } else {
+                // Show category selection
+                VStack(spacing: 0) {
+                    // Header
+                    HStack {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "chevron.left")
+                                .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
+                        }
+
+                        Spacer()
+
+                        Text("Create New Activity")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.black)
+
+                        Spacer()
+
+                        Color.clear
+                            .frame(width: 20)
+                    }
+                    .padding(16)
+                    .background(Color.white)
+
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            Text("Select a Category")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 16)
+
+                            VStack(spacing: 12) {
+                                // Study
+                                Button(action: { selectedCategory = .study }) {
+                                    HStack(spacing: 16) {
+                                        Text(Activity.ActivityCategory.study.emoji)
+                                            .font(.system(size: 32))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Study")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(.black)
+
+                                            Text("Study groups and exam prep")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(.gray)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                }
+
+                                // Meal Buddy
+                                Button(action: { selectedCategory = .mealBuddy }) {
+                                    HStack(spacing: 16) {
+                                        Text(Activity.ActivityCategory.mealBuddy.emoji)
+                                            .font(.system(size: 32))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Meal Buddy")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(.black)
+
+                                            Text("Find people to eat with")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(.gray)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                }
+
+                                // Sports
+                                Button(action: { selectedCategory = .sports }) {
+                                    HStack(spacing: 16) {
+                                        Text(Activity.ActivityCategory.sports.emoji)
+                                            .font(.system(size: 32))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Sports")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(.black)
+
+                                            Text("Form sports teams and groups")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(.gray)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                }
+
+                                // Others
+                                Button(action: { selectedCategory = .others }) {
+                                    HStack(spacing: 16) {
+                                        Text(Activity.ActivityCategory.others.emoji)
+                                            .font(.system(size: 32))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("Others")
+                                                .font(.system(size: 16, weight: .semibold))
+                                                .foregroundColor(.black)
+
+                                            Text("Coffee chats and socializing")
+                                                .font(.system(size: 12, weight: .regular))
+                                                .foregroundColor(.gray)
+                                        }
+
+                                        Spacer()
+
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.gray)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color.white)
+                                    .cornerRadius(12)
+                                }
+                            }
+                            .padding(16)
+                        }
+                    }
+                }
+                .background(Color(.systemGray6))
+                .navigationBarBackButtonHidden(true)
+            }
+        }
     }
 }
 
