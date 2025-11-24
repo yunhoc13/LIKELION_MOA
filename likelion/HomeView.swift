@@ -73,6 +73,24 @@ struct HomeView: View {
                 .background(Color.white)
                 .border(Color(.systemGray5), width: 1)
             }
+
+            // Floating + Button
+            VStack {
+                Spacer()
+
+                HStack {
+                    Spacer()
+
+                    Button(action: {}) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 56))
+                            .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
+                            .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 90)
+                }
+            }
         }
     }
 }
