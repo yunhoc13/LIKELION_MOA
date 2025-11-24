@@ -68,34 +68,32 @@ struct CategoryCardLarge: View {
     let description: String
 
     var body: some View {
-        Button(action: {}) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
-                    Text(icon)
-                        .font(.system(size: 32))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Text(icon)
+                    .font(.system(size: 32))
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.black)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.black)
 
-                        Text(description)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(.gray)
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
+                    Text(description)
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.gray)
                 }
-                .frame(maxWidth: .infinity)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .foregroundColor(.gray)
             }
-            .padding(16)
-            .background(Color.white)
-            .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            .frame(maxWidth: .infinity)
         }
+        .padding(16)
+        .background(Color.white)
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
     }
 }
 

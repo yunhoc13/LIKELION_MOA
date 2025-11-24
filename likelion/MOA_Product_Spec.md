@@ -240,15 +240,6 @@ List of upcoming activities under that category.
 
 Option: Filter by date/time, distance, school, etc.
 
-Button: “Create new [Category] activity”.
-
-Create Activity flow (common pattern; fields differ slightly by category):
-
-Category pre-selected.
-
-Form fields (see detailed specs in section 6).
-
-After form submit → new activity created → appears in lists/feeds.
 
 5.4 Calendar Tab Flow
 
