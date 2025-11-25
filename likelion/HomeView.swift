@@ -6,7 +6,8 @@ struct HomeView: View {
     @State private var showCreateActivity: Bool = false
 
     var body: some View {
-        ZStack {
+        NavigationStack {
+            ZStack {
             VStack {
                 // Tab content
                 Group {
@@ -93,8 +94,9 @@ struct HomeView: View {
                 }
             }
         }
-        .navigationDestination(isPresented: $showCreateActivity) {
-            CreateActivityWrapperView(isPresented: $showCreateActivity)
+            .navigationDestination(isPresented: $showCreateActivity) {
+                CreateActivityWrapperView(isPresented: $showCreateActivity)
+            }
         }
     }
 }
