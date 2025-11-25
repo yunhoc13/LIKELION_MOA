@@ -24,24 +24,21 @@ struct CreateActivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            HStack {
+            HStack(spacing: 12) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
                         .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
+                        .font(.system(size: 16))
                 }
 
-                Spacer()
-
                 Text("Create \(category.rawValue)")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.black)
 
                 Spacer()
-
-                Color.clear
-                    .frame(width: 20)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(Color.white)
 
             ScrollView {
