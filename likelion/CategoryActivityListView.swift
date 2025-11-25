@@ -34,7 +34,7 @@ struct CategoryActivityListView: View {
                 Spacer()
 
                 Text(category.rawValue)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.black)
 
                 Spacer()
@@ -42,11 +42,12 @@ struct CategoryActivityListView: View {
                 Color.clear
                     .frame(width: 20)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .background(Color.white)
 
             ScrollView {
-                VStack(spacing: 12) {
+                VStack(spacing: 6) {
                     // Filter Options
                     VStack(spacing: 8) {
                         Text("Filters")
@@ -126,9 +127,9 @@ struct CategoryActivityListView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(8)
                     }
-                    .padding(12)
+                    .padding(10)
                     .background(Color.white)
-                    .cornerRadius(12)
+                    .cornerRadius(10)
 
                     // Activities List
                     VStack(alignment: .leading, spacing: 8) {
@@ -154,9 +155,9 @@ struct CategoryActivityListView: View {
                             }
                         }
                     }
-                    .padding(12)
+                    .padding(10)
                     .background(Color.white)
-                    .cornerRadius(12)
+                    .cornerRadius(10)
 
                     // Create Activity Button
                     Button(action: { showCreateActivity = true }) {
@@ -173,9 +174,11 @@ struct CategoryActivityListView: View {
                         .background(Color(red: 0.4, green: 0.3, blue: 0.8))
                         .cornerRadius(8)
                     }
-                    .padding(12)
+                    .padding(10)
                 }
-                .padding(12)
+                .padding(.horizontal, 10)
+                .padding(.top, 0)
+                .padding(.bottom, 10)
             }
         }
         .background(Color(.systemGray6))
