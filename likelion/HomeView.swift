@@ -18,6 +18,8 @@ struct HomeView: View {
                     } else if selectedTab == 2 {
                         CalendarTabView()
                     } else if selectedTab == 3 {
+                        MyEventsTabView()
+                    } else if selectedTab == 4 {
                         ProfileTabView()
                     }
                 }
@@ -61,14 +63,24 @@ struct HomeView: View {
                         selectedTab = 2
                     }
 
-                    // Profile Tab
+                    // My Events Tab
                     TabBarItem(
-                        icon: "person.fill",
-                        label: "Profile",
+                        icon: "bookmark.fill",
+                        label: "My Events",
                         isSelected: selectedTab == 3
                     )
                     .onTapGesture {
                         selectedTab = 3
+                    }
+
+                    // Profile Tab
+                    TabBarItem(
+                        icon: "person.fill",
+                        label: "Profile",
+                        isSelected: selectedTab == 4
+                    )
+                    .onTapGesture {
+                        selectedTab = 4
                     }
                 }
                 .frame(height: 70)
@@ -76,21 +88,23 @@ struct HomeView: View {
                 .border(Color(.systemGray5), width: 1)
             }
 
-            // Floating + Button
-            VStack {
-                Spacer()
-
-                HStack {
+            // Floating + Button (not shown on My Events or Profile tabs)
+            if selectedTab != 3 && selectedTab != 4 {
+                VStack {
                     Spacer()
 
-                    Button(action: { showCreateActivity = true }) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 56))
-                            .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
-                            .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    HStack {
+                        Spacer()
+
+                        Button(action: { showCreateActivity = true }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 56))
+                                .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
+                                .shadow(color: Color.black.opacity(0.2), radius: 4, x: 0, y: 2)
+                        }
+                        .padding(.trailing, 20)
+                        .padding(.bottom, 90)
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 90)
                 }
             }
         }

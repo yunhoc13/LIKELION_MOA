@@ -63,8 +63,8 @@ struct LoginView: View {
                 .cornerRadius(8)
             }
 
-            // Error message
-            if let errorMessage = errorMessage {
+            // Error message from local validation or API
+            if let errorMessage = errorMessage ?? appState.errorMessage {
                 Text(errorMessage)
                     .font(.system(size: 12, weight: .regular))
                     .foregroundColor(.red)
@@ -76,20 +76,26 @@ struct LoginView: View {
             Button(action: {
                 // Dismiss keyboard first
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                print("DEBUG: Button tapped!")
                 handleLogin()
             }) {
-                Text("Sign In")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color(red: 0.4, green: 0.3, blue: 0.8))
-                    .cornerRadius(8)
+                if appState.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color(red: 0.4, green: 0.3, blue: 0.8).opacity(0.7))
+                        .cornerRadius(8)
+                } else {
+                    Text("Sign In")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color(red: 0.4, green: 0.3, blue: 0.8))
+                        .cornerRadius(8)
+                }
             }
-            .simultaneousGesture(TapGesture().onEnded {
-                print("DEBUG: Simultaneous gesture detected!")
-            })
+            .disabled(appState.isLoading)
     
     
 
@@ -113,19 +119,16 @@ struct LoginView: View {
     }
 
     private func handleLogin() {
-        print("handleLogin called with email: \(email), password: \(password)")
-
         if email.isEmpty || password.isEmpty {
-            print("Email or password is empty")
             errorMessage = "Please fill in all fields"
             return
         }
 
-        print("Login validation passed, calling appState.login")
         errorMessage = nil
-        print("About to set isLoggedIn to true")
-        appState.login(email: email, password: password)
-        print("isLoggedIn is now: \(appState.isLoggedIn)")
+
+        Task {
+            await appState.login(email: email, password: password)
+        }
     }
 }
 

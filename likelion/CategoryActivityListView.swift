@@ -2,13 +2,14 @@ import SwiftUI
 
 struct CategoryActivityListView: View {
     let category: Activity.ActivityCategory
-    let activities: [Activity]
     @Environment(\.dismiss) var dismiss
+    @State private var activities: [Activity] = []
     @State private var showCreateActivity: Bool = false
     @State private var selectedDate: Date?
     @State private var filterByDate: Bool = false
     @State private var sortByDistance: Bool = false
     @State private var filterBySchool: Bool = false
+    @State private var isLoading: Bool = false
 
     var filteredActivities: [Activity] {
         var filtered = activities.filter { $0.category == category }
@@ -182,6 +183,47 @@ struct CategoryActivityListView: View {
         .navigationDestination(isPresented: $showCreateActivity) {
             CreateActivityView(category: category, isPresented: $showCreateActivity)
         }
+        .onAppear {
+            fetchActivities()
+        }
+    }
+
+    private func fetchActivities() {
+        isLoading = true
+        Task {
+            do {
+                let fetchedActivityData = try await APIService.shared.fetchActivities(category: category.rawValue)
+                let convertedActivities = fetchedActivityData.map { data -> Activity in
+                    Activity(
+                        id: data.id,
+                        title: data.title,
+                        category: Activity.ActivityCategory(rawValue: data.category) ?? .others,
+                        description: data.description,
+                        hostUserId: data.hostUserId,
+                        hostName: data.hostName,
+                        locationName: data.locationName,
+                        locationLat: data.locationLat,
+                        locationLng: data.locationLng,
+                        startDateTime: data.startDateTime,
+                        endDateTime: data.endDateTime,
+                        isInstant: data.isInstant,
+                        maxParticipants: data.maxParticipants,
+                        currentParticipants: data.currentParticipants,
+                        status: Activity.ActivityStatus(rawValue: data.status) ?? .open,
+                        participants: data.participants,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt
+                    )
+                }
+
+                activities = convertedActivities
+                isLoading = false
+            } catch {
+                // Clear activities if API fails - no fallback to samples
+                activities = []
+                isLoading = false
+            }
+        }
     }
 }
 
@@ -260,9 +302,6 @@ struct ActivityListItem: View {
 
 #Preview {
     NavigationStack {
-        CategoryActivityListView(
-            category: .study,
-            activities: Activity.samples
-        )
+        CategoryActivityListView(category: .study)
     }
 }

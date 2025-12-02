@@ -7,9 +7,20 @@ struct CalendarTabView: View {
     @State private var showMyActivitiesOnly: Bool = false
     @State private var selectedActivity: Activity?
     @State private var showActivityDetail: Bool = false
+    @State private var activities: [Activity] = []
+    @State private var isLoading: Bool = false
 
-    // Sample activities - in real app, these would come from backend
-    let activities: [Activity] = Activity.samples
+    var filteredActivities: [Activity] {
+        if showMyActivitiesOnly {
+            if let user = appState.currentUser {
+                return activities.filter { activity in
+                    activity.participants.contains(user.id)
+                }
+            }
+            return []
+        }
+        return activities
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,7 +42,7 @@ struct CalendarTabView: View {
                     CalendarGridView(
                         currentDate: $currentDate,
                         selectedDate: $selectedDate,
-                        activities: activities
+                        activities: filteredActivities
                     )
 
                     // Toggle for My Activities / All Activities
@@ -105,11 +116,52 @@ struct CalendarTabView: View {
                 ActivityDetailView(activity: activity)
             }
         }
+        .onAppear {
+            fetchActivities()
+        }
+    }
+
+    private func fetchActivities() {
+        isLoading = true
+        Task {
+            do {
+                let fetchedActivityData = try await APIService.shared.fetchActivities()
+                let convertedActivities = fetchedActivityData.map { data -> Activity in
+                    Activity(
+                        id: data.id,
+                        title: data.title,
+                        category: Activity.ActivityCategory(rawValue: data.category) ?? .others,
+                        description: data.description,
+                        hostUserId: data.hostUserId,
+                        hostName: data.hostName,
+                        locationName: data.locationName,
+                        locationLat: data.locationLat,
+                        locationLng: data.locationLng,
+                        startDateTime: data.startDateTime,
+                        endDateTime: data.endDateTime,
+                        isInstant: data.isInstant,
+                        maxParticipants: data.maxParticipants,
+                        currentParticipants: data.currentParticipants,
+                        status: Activity.ActivityStatus(rawValue: data.status) ?? .open,
+                        participants: data.participants,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt
+                    )
+                }
+
+                activities = convertedActivities
+                isLoading = false
+            } catch {
+                // Clear activities if API fails - no fallback to samples
+                activities = []
+                isLoading = false
+            }
+        }
     }
 
     private func getActivitiesForDate(_ date: Date) -> [Activity] {
         let calendar = Calendar.current
-        return activities.filter { activity in
+        return filteredActivities.filter { activity in
             calendar.isDate(activity.startDateTime, inSameDayAs: date)
         }
     }
@@ -125,12 +177,13 @@ struct CalendarGridView: View {
     @Binding var currentDate: Date
     @Binding var selectedDate: Date?
     let activities: [Activity]
+    private let calendar = Calendar.current
 
     var body: some View {
         VStack(spacing: 12) {
             // Month Navigation
             HStack {
-                Button(action: { currentDate = Calendar.current.date(byAdding: .month, value: -1, to: currentDate) ?? currentDate }) {
+                Button(action: { currentDate = calendar.date(byAdding: .month, value: -1, to: currentDate) ?? currentDate }) {
                     Image(systemName: "chevron.left")
                         .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
                 }
@@ -143,7 +196,7 @@ struct CalendarGridView: View {
 
                 Spacer()
 
-                Button(action: { currentDate = Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate }) {
+                Button(action: { currentDate = calendar.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate }) {
                     Image(systemName: "chevron.right")
                         .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
                 }
@@ -153,7 +206,8 @@ struct CalendarGridView: View {
 
             // Day labels
             HStack {
-                ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
+                let daySymbols = calendar.shortWeekdaySymbols
+                ForEach(daySymbols, id: \.self) { day in
                     Text(day)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.gray)
@@ -163,24 +217,20 @@ struct CalendarGridView: View {
             .padding(.horizontal, 16)
 
             // Calendar Grid
-            let firstDay = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: currentDate))!
-            let range = Calendar.current.range(of: .day, in: .month, for: currentDate)!
-            let numDays = range.count
-            let startingWeekday = Calendar.current.component(.weekday, from: firstDay) - 1
+            let calendarDates = getCalendarDays(for: currentDate)
+            let weeks = stride(from: 0, to: calendarDates.count, by: 7).map { Array(calendarDates[$0..<min($0 + 7, calendarDates.count)]) }
 
             VStack(spacing: 8) {
-                ForEach(0..<((startingWeekday + numDays + 6) / 7), id: \.self) { week in
+                ForEach(weeks, id: \.self) { week in
                     HStack(spacing: 8) {
-                        ForEach(0..<7, id: \.self) { day in
-                            let dayIndex = week * 7 + day - startingWeekday
+                        ForEach(week, id: \.self) { date in
                             CalendarDayCell(
-                                day: dayIndex > 0 && dayIndex <= numDays ? dayIndex : 0,
-                                isSelected: selectedDate.map { Calendar.current.isDate($0, inSameDayAs: Calendar.current.date(byAdding: .day, value: dayIndex - 1, to: firstDay)!) } ?? false,
-                                hasActivity: dayIndex > 0 && dayIndex <= numDays && hasActivityOnDay(dayIndex),
+                                date: date,
+                                currentMonth: currentDate,
+                                isSelected: selectedDate.map { calendar.isDate($0, inSameDayAs: date) } ?? false,
+                                hasActivity: hasActivityOnDate(date),
                                 action: {
-                                    if dayIndex > 0 && dayIndex <= numDays {
-                                        selectedDate = Calendar.current.date(byAdding: .day, value: dayIndex - 1, to: firstDay)
-                                    }
+                                    selectedDate = date
                                 }
                             )
                         }
@@ -194,10 +244,8 @@ struct CalendarGridView: View {
         .padding(16)
     }
 
-    private func hasActivityOnDay(_ day: Int) -> Bool {
-        let firstDay = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: currentDate))!
-        let targetDate = Calendar.current.date(byAdding: .day, value: day - 1, to: firstDay)!
-        return activities.contains { Calendar.current.isDate($0.startDateTime, inSameDayAs: targetDate) }
+    private func hasActivityOnDate(_ date: Date) -> Bool {
+        activities.contains { calendar.isDate($0.startDateTime, inSameDayAs: date) }
     }
 
     private func monthYearString(_ date: Date) -> String {
@@ -205,35 +253,65 @@ struct CalendarGridView: View {
         formatter.dateFormat = "MMMM yyyy"
         return formatter.string(from: date)
     }
+
+    private func getCalendarDays(for date: Date) -> [Date] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: date),
+              let monthFirstWeek = calendar.dateInterval(of: .weekOfYear, for: monthInterval.start),
+              let monthLastWeek = calendar.dateInterval(of: .weekOfYear, for: monthInterval.end) else {
+            return []
+        }
+
+        var days: [Date] = []
+        var currentDate = monthFirstWeek.start
+
+        while currentDate < monthLastWeek.end {
+            days.append(currentDate)
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: currentDate) else { break }
+            currentDate = nextDate
+        }
+
+        return days
+    }
 }
 
 struct CalendarDayCell: View {
-    let day: Int
+    let date: Date
+    let currentMonth: Date
     let isSelected: Bool
     let hasActivity: Bool
     let action: () -> Void
+    private let calendar = Calendar.current
+
+    private var dayString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+
+    private var isCurrentMonth: Bool {
+        calendar.isDate(date, equalTo: currentMonth, toGranularity: .month)
+    }
 
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
-                if day > 0 {
-                    VStack {
-                        Text("\(day)")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(isSelected ? .white : .black)
+                VStack {
+                    Text(dayString)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(isSelected ? .white : (isCurrentMonth ? .black : .gray))
 
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(isSelected ? Color(red: 0.4, green: 0.3, blue: 0.8) : Color(.systemGray6))
-                    .cornerRadius(6)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isSelected ? Color(red: 0.4, green: 0.3, blue: 0.8) : Color(.systemGray6))
+                .cornerRadius(6)
+                .opacity(isCurrentMonth ? 1.0 : 0.5)
 
-                    if hasActivity {
-                        Circle()
-                            .fill(Color(red: 0.97, green: 0.5, blue: 0.25))
-                            .frame(width: 6, height: 6)
-                            .padding(4)
-                    }
+                if hasActivity {
+                    Circle()
+                        .fill(Color(red: 0.97, green: 0.5, blue: 0.25))
+                        .frame(width: 6, height: 6)
+                        .padding(4)
                 }
             }
             .frame(height: 40)
@@ -300,75 +378,129 @@ struct ActivityDateItem: View {
 struct ActivityDetailView: View {
     let activity: Activity
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var appState: AppState
+    @State private var isJoining: Bool = false
+    @State private var showSuccessMessage: Bool = false
+    @State private var hasJoined: Bool = false
 
     var body: some View {
-        VStack(spacing: 16) {
-            HStack {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
                 Button(action: { dismiss() }) {
                     Image(systemName: "chevron.left")
                         .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
                 }
-                Spacer()
+
                 Text("Activity Details")
                     .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+
                 Spacer()
-                Color.clear
-                    .frame(width: 20)
             }
-            .padding(16)
+            .padding(12)
+            .background(Color.white)
+            .border(Color(.systemGray5), width: 1)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // Activity Header
+                VStack(alignment: .leading, spacing: 12) {
+                    // Activity Header - Compact
                     HStack(spacing: 12) {
                         Text(activity.category.emoji)
-                            .font(.system(size: 32))
+                            .font(.system(size: 28))
 
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(activity.title)
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.black)
 
                             Text(activity.category.rawValue)
-                                .font(.system(size: 12, weight: .regular))
+                                .font(.system(size: 11, weight: .regular))
                                 .foregroundColor(.gray)
                         }
 
                         Spacer()
                     }
-                    .padding(16)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
+                    .padding(12)
+                    .background(Color.white)
+                    .cornerRadius(10)
 
-                    // Details
-                    VStack(alignment: .leading, spacing: 12) {
+                    // Details - Compact
+                    VStack(alignment: .leading, spacing: 10) {
                         DetailRow(label: "Time", value: dateTimeString(activity.startDateTime))
+                        Divider()
                         DetailRow(label: "Location", value: activity.locationName)
+                        Divider()
                         DetailRow(label: "Description", value: activity.description)
+                        Divider()
                         DetailRow(label: "Host", value: activity.hostName)
+                        Divider()
                         DetailRow(label: "Participants", value: "\(activity.currentParticipants) / \(activity.maxParticipants)")
                     }
-                    .padding(16)
+                    .padding(12)
                     .background(Color.white)
-                    .cornerRadius(12)
+                    .cornerRadius(10)
 
                     // Join Button
-                    Button(action: {}) {
-                        Text(activity.isFull ? "Activity Full" : "Join Activity")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(14)
-                            .background(activity.isFull ? Color.gray : Color(red: 0.4, green: 0.3, blue: 0.8))
-                            .cornerRadius(8)
+                    Button(action: joinActivity) {
+                        if isJoining {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                                .background(Color(red: 0.4, green: 0.3, blue: 0.8).opacity(0.7))
+                                .cornerRadius(8)
+                        } else {
+                            Text(hasJoined ? "Joined" : (activity.isFull ? "Activity Full" : "Join Activity"))
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(12)
+                                .background(hasJoined ? Color.green : (activity.isFull ? Color.gray : Color(red: 0.4, green: 0.3, blue: 0.8)))
+                                .cornerRadius(8)
+                        }
                     }
-                    .disabled(activity.isFull)
-                    .padding(16)
+                    .disabled(activity.isFull || hasJoined || isJoining)
+                    .alert("Joined Activity", isPresented: $showSuccessMessage) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                    } message: {
+                        Text("You've successfully joined \(activity.title)!")
+                    }
                 }
+                .padding(12)
             }
+            .background(Color(.systemGray6))
         }
         .background(Color(.systemGray6))
         .navigationBarBackButtonHidden(true)
+        .onAppear {
+            // Check if current user already joined
+            if let user = appState.currentUser {
+                hasJoined = activity.participants.contains(user.id)
+            }
+        }
+    }
+
+    private func joinActivity() {
+        guard let user = appState.currentUser else {
+            return
+        }
+
+        isJoining = true
+
+        Task {
+            do {
+                let _ = try await APIService.shared.joinActivity(activityId: activity.id, userId: user.id)
+                isJoining = false
+                hasJoined = true
+                showSuccessMessage = true
+            } catch {
+                isJoining = false
+                // Show error if needed
+                print("Error joining activity: \(error)")
+            }
+        }
     }
 
     private func dateTimeString(_ date: Date) -> String {

@@ -6,8 +6,21 @@ struct HomeTabView: View {
     @State private var navigateToCategory: Activity.ActivityCategory?
     @State private var selectedActivity: Activity?
     @State private var showActivityDetail: Bool = false
+    @State private var activities: [Activity] = []
+    @State private var isLoading: Bool = false
 
-    let activities: [Activity] = Activity.samples
+    private var selectedCategoryType: Activity.ActivityCategory {
+        switch selectedCategory {
+        case 0: return .study
+        case 1: return .mealBuddy
+        case 2: return .sports
+        default: return .others
+        }
+    }
+
+    private var trendingActivities: [Activity] {
+        activities.filter { $0.category == selectedCategoryType }
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,20 +40,20 @@ struct HomeTabView: View {
                 HStack(spacing: 8) {
                     Spacer()
 
-                    NavigationLink(destination: CategoryDetailView(category: .study, activities: activities)) {
-                        CategoryChip(label: "스터디", isSelected: selectedCategory == 0)
+                    Button(action: { selectedCategory = 0 }) {
+                        CategoryChip(label: "Study", isSelected: selectedCategory == 0)
                     }
 
-                    NavigationLink(destination: CategoryDetailView(category: .mealBuddy, activities: activities)) {
-                        CategoryChip(label: "밥친구", isSelected: selectedCategory == 1)
+                    Button(action: { selectedCategory = 1 }) {
+                        CategoryChip(label: "Meal Buddy", isSelected: selectedCategory == 1)
                     }
 
-                    NavigationLink(destination: CategoryDetailView(category: .sports, activities: activities)) {
-                        CategoryChip(label: "스포츠", isSelected: selectedCategory == 2)
+                    Button(action: { selectedCategory = 2 }) {
+                        CategoryChip(label: "Sports", isSelected: selectedCategory == 2)
                     }
 
-                    NavigationLink(destination: CategoryDetailView(category: .others, activities: activities)) {
-                        CategoryChip(label: "기타", isSelected: selectedCategory == 3)
+                    Button(action: { selectedCategory = 3 }) {
+                        CategoryChip(label: "Others", isSelected: selectedCategory == 3)
                     }
 
                     Spacer()
@@ -61,51 +74,108 @@ struct HomeTabView: View {
                         .padding(.top, 12)
 
                     // Trending cards in 2x2 grid
-                    VStack(spacing: 12) {
-                        HStack(spacing: 12) {
-                            NavigationLink(destination: ActivityDetailView(activity: activities[0])) {
-                                TrendingCard(
-                                    icon: activities[0].category.emoji,
-                                    title: activities[0].title,
-                                    description: activities[0].description
-                                )
+                    if trendingActivities.isEmpty {
+                        Text("No activities yet")
+                            .font(.system(size: 14, weight: .regular))
+                            .foregroundColor(.gray)
+                            .frame(maxWidth: .infinity)
+                            .padding(32)
+                    } else {
+                        VStack(spacing: 12) {
+                            // First row
+                            HStack(spacing: 12) {
+                                if trendingActivities.count > 0 {
+                                    NavigationLink(destination: ActivityDetailView(activity: trendingActivities[0])) {
+                                        TrendingCard(
+                                            icon: trendingActivities[0].category.emoji,
+                                            title: trendingActivities[0].title,
+                                            description: trendingActivities[0].description
+                                        )
+                                    }
+                                }
+
+                                if trendingActivities.count > 1 {
+                                    NavigationLink(destination: ActivityDetailView(activity: trendingActivities[1])) {
+                                        TrendingCard(
+                                            icon: trendingActivities[1].category.emoji,
+                                            title: trendingActivities[1].title,
+                                            description: trendingActivities[1].description,
+                                            isHighlighted: true
+                                        )
+                                    }
+                                }
                             }
 
-                            NavigationLink(destination: ActivityDetailView(activity: activities[1])) {
-                                TrendingCard(
-                                    icon: activities[1].category.emoji,
-                                    title: activities[1].title,
-                                    description: activities[1].description,
-                                    isHighlighted: true
-                                )
-                            }
-                        }
+                            // Second row
+                            if trendingActivities.count > 2 {
+                                HStack(spacing: 12) {
+                                    NavigationLink(destination: ActivityDetailView(activity: trendingActivities[2])) {
+                                        TrendingCard(
+                                            icon: trendingActivities[2].category.emoji,
+                                            title: trendingActivities[2].title,
+                                            description: trendingActivities[2].description
+                                        )
+                                    }
 
-                        HStack(spacing: 12) {
-                            NavigationLink(destination: ActivityDetailView(activity: activities[2])) {
-                                TrendingCard(
-                                    icon: activities[2].category.emoji,
-                                    title: activities[2].title,
-                                    description: activities[2].description
-                                )
-                            }
-
-                            if activities.count > 3 {
-                                NavigationLink(destination: ActivityDetailView(activity: activities[3])) {
-                                    TrendingCard(
-                                        icon: activities[3].category.emoji,
-                                        title: activities[3].title,
-                                        description: activities[3].description
-                                    )
+                                    if trendingActivities.count > 3 {
+                                        NavigationLink(destination: ActivityDetailView(activity: trendingActivities[3])) {
+                                            TrendingCard(
+                                                icon: trendingActivities[3].category.emoji,
+                                                title: trendingActivities[3].title,
+                                                description: trendingActivities[3].description
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
             }
             .background(Color(.systemGray6))
+        }
+        .onAppear {
+            fetchActivities()
+        }
+    }
+
+    private func fetchActivities() {
+        isLoading = true
+        Task {
+            do {
+                let fetchedActivityData = try await APIService.shared.fetchActivities()
+                let convertedActivities = fetchedActivityData.map { data -> Activity in
+                    Activity(
+                        id: data.id,
+                        title: data.title,
+                        category: Activity.ActivityCategory(rawValue: data.category) ?? .others,
+                        description: data.description,
+                        hostUserId: data.hostUserId,
+                        hostName: data.hostName,
+                        locationName: data.locationName,
+                        locationLat: data.locationLat,
+                        locationLng: data.locationLng,
+                        startDateTime: data.startDateTime,
+                        endDateTime: data.endDateTime,
+                        isInstant: data.isInstant,
+                        maxParticipants: data.maxParticipants,
+                        currentParticipants: data.currentParticipants,
+                        status: Activity.ActivityStatus(rawValue: data.status) ?? .open,
+                        participants: data.participants,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt
+                    )
+                }
+
+                activities = convertedActivities
+                isLoading = false
+            } catch {
+                // No fallback to samples - only show what's in the database
+                activities = []
+                isLoading = false
+            }
         }
     }
 }

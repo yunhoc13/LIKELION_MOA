@@ -2,8 +2,8 @@ import SwiftUI
 
 struct CategoriesTabView: View {
     @EnvironmentObject var appState: AppState
-
-    let activities: [Activity] = Activity.samples
+    @State private var activities: [Activity] = []
+    @State private var isLoading: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -22,7 +22,7 @@ struct CategoriesTabView: View {
 
                 // Category cards
                 VStack(spacing: 12) {
-                    NavigationLink(destination: CategoryActivityListView(category: .study, activities: activities)) {
+                    NavigationLink(destination: CategoryActivityListView(category: .study)) {
                         CategoryCardLarge(
                             icon: "📚",
                             title: "Study",
@@ -30,7 +30,7 @@ struct CategoriesTabView: View {
                         )
                     }
 
-                    NavigationLink(destination: CategoryActivityListView(category: .mealBuddy, activities: activities)) {
+                    NavigationLink(destination: CategoryActivityListView(category: .mealBuddy)) {
                         CategoryCardLarge(
                             icon: "🍜",
                             title: "Meal Buddy",
@@ -38,7 +38,7 @@ struct CategoriesTabView: View {
                         )
                     }
 
-                    NavigationLink(destination: CategoryActivityListView(category: .sports, activities: activities)) {
+                    NavigationLink(destination: CategoryActivityListView(category: .sports)) {
                         CategoryCardLarge(
                             icon: "⚽",
                             title: "Sports",
@@ -46,7 +46,7 @@ struct CategoriesTabView: View {
                         )
                     }
 
-                    NavigationLink(destination: CategoryActivityListView(category: .others, activities: activities)) {
+                    NavigationLink(destination: CategoryActivityListView(category: .others)) {
                         CategoryCardLarge(
                             icon: "☕",
                             title: "Others",
@@ -57,6 +57,47 @@ struct CategoriesTabView: View {
                 .padding(16)
 
                 Spacer()
+            }
+        }
+        .onAppear {
+            fetchActivities()
+        }
+    }
+
+    private func fetchActivities() {
+        isLoading = true
+        Task {
+            do {
+                let fetchedActivityData = try await APIService.shared.fetchActivities()
+                let convertedActivities = fetchedActivityData.map { data -> Activity in
+                    Activity(
+                        id: data.id,
+                        title: data.title,
+                        category: Activity.ActivityCategory(rawValue: data.category) ?? .others,
+                        description: data.description,
+                        hostUserId: data.hostUserId,
+                        hostName: data.hostName,
+                        locationName: data.locationName,
+                        locationLat: data.locationLat,
+                        locationLng: data.locationLng,
+                        startDateTime: data.startDateTime,
+                        endDateTime: data.endDateTime,
+                        isInstant: data.isInstant,
+                        maxParticipants: data.maxParticipants,
+                        currentParticipants: data.currentParticipants,
+                        status: Activity.ActivityStatus(rawValue: data.status) ?? .open,
+                        participants: data.participants,
+                        createdAt: data.createdAt,
+                        updatedAt: data.updatedAt
+                    )
+                }
+
+                activities = convertedActivities
+                isLoading = false
+            } catch {
+                // Clear activities if API fails - no fallback to samples
+                activities = []
+                isLoading = false
             }
         }
     }
@@ -98,6 +139,8 @@ struct CategoryCardLarge: View {
 }
 
 #Preview {
-    CategoriesTabView()
-        .environmentObject(AppState())
+    NavigationStack {
+        CategoriesTabView()
+            .environmentObject(AppState())
+    }
 }

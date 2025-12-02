@@ -266,11 +266,9 @@ Calendar screen:
 
 Default view: Monthly calendar.
 
-Mark dates where the user has:
+Mark dates where the dates has:
 
-Created an activity
-
-Joined an activity.
+Any kind of activities posted
 
 Tapping a date:
 
@@ -293,6 +291,7 @@ Toggle:
 “My activities only”
 
 “All nearby activities on this date”
+
 
 5.5 Profile Tab Flow
 

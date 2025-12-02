@@ -99,8 +99,8 @@ struct ProfileSetupView: View {
                             .cornerRadius(8)
                     }
 
-                    // Error message
-                    if let errorMessage = errorMessage {
+                    // Error message from local validation or API
+                    if let errorMessage = errorMessage ?? appState.errorMessage {
                         Text(errorMessage)
                             .font(.system(size: 12, weight: .regular))
                             .foregroundColor(.red)
@@ -112,49 +112,62 @@ struct ProfileSetupView: View {
 
             // Finish Setup Button
             Button(action: handleFinishSetup) {
-                Text("Finish Setup")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(Color(red: 0.4, green: 0.3, blue: 0.8))
-                    .cornerRadius(8)
+                if appState.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color(red: 0.4, green: 0.3, blue: 0.8).opacity(0.7))
+                        .cornerRadius(8)
+                } else {
+                    Text("Finish Setup")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color(red: 0.4, green: 0.3, blue: 0.8))
+                        .cornerRadius(8)
+                }
             }
+            .disabled(appState.isLoading)
 
             // Skip for now button
             Button(action: {
-                appState.completeProfileSetup(
-                    nickname: appState.currentUser?.name ?? "User",
-                    major: "",
-                    graduationYear: "",
-                    bio: ""
-                )
+                Task {
+                    await appState.completeProfileSetup(
+                        nickname: appState.currentUser?.name ?? "User",
+                        major: "",
+                        graduationYear: "",
+                        bio: ""
+                    )
+                }
             }) {
                 Text("Skip for now")
                     .font(.system(size: 14, weight: .regular))
                     .foregroundColor(Color(red: 0.4, green: 0.3, blue: 0.8))
             }
+            .disabled(appState.isLoading)
             .padding(.bottom, 40)
         }
         .padding(.horizontal, 24)
     }
 
     private func handleFinishSetup() {
-        print("handleFinishSetup called")
-
         if nickname.isEmpty {
             errorMessage = "Nickname is required"
             return
         }
 
-        print("Profile setup validation passed")
         errorMessage = nil
-        appState.completeProfileSetup(
-            nickname: nickname,
-            major: major,
-            graduationYear: graduationYear,
-            bio: bio
-        )
+
+        Task {
+            await appState.completeProfileSetup(
+                nickname: nickname,
+                major: major,
+                graduationYear: graduationYear,
+                bio: bio
+            )
+        }
     }
 }
 
