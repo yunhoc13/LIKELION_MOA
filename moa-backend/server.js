@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const admin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
@@ -9,83 +9,48 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Database setup
-const dbPath = path.join(__dirname, 'moa.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Database connection failed:', err);
-  } else {
-    console.log('Database connected at', dbPath);
-    initializeDatabase();
-  }
-});
+// Initialize Firebase Admin SDK
+// Support both local file and environment variables for deployment
+let credential;
 
-// Helper function to format SQLite dates to ISO8601
-function formatDateToISO8601(sqliteDate) {
-  if (!sqliteDate) return null;
-  try {
-    // SQLite returns dates like "2024-12-01 10:30:45"
-    // Convert to ISO8601 like "2024-12-01T10:30:45Z"
-    const date = new Date(sqliteDate + 'Z');
-    return date.toISOString();
-  } catch (e) {
-    return sqliteDate;
-  }
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Production: Use environment variable
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  credential = admin.credential.cert(serviceAccount);
+} else {
+  // Development: Use local file
+  const serviceAccount = require('./firebase-service-account.json');
+  credential = admin.credential.cert(serviceAccount);
 }
 
-// Initialize database
-function initializeDatabase() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      name TEXT NOT NULL,
-      university TEXT NOT NULL,
-      major TEXT,
-      graduation_year TEXT,
-      bio TEXT,
-      profile_picture_url TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `, (err) => {
-    if (err) {
-      console.error('Error creating users table:', err);
-    } else {
-      console.log('Users table ready');
-    }
-  });
+admin.initializeApp({
+  credential: credential
+});
 
-  db.run(`
-    CREATE TABLE IF NOT EXISTS activities (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      category TEXT NOT NULL,
-      description TEXT NOT NULL,
-      host_user_id TEXT NOT NULL,
-      host_name TEXT NOT NULL,
-      location_name TEXT NOT NULL,
-      location_lat REAL NOT NULL,
-      location_lng REAL NOT NULL,
-      start_date_time DATETIME NOT NULL,
-      end_date_time DATETIME,
-      is_instant INTEGER DEFAULT 0,
-      max_participants INTEGER NOT NULL,
-      current_participants INTEGER DEFAULT 1,
-      status TEXT DEFAULT 'open',
-      participants TEXT DEFAULT '[]',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (host_user_id) REFERENCES users(id)
-    )
-  `, (err) => {
-    if (err) {
-      console.error('Error creating activities table:', err);
-    } else {
-      console.log('Activities table ready');
-    }
-  });
+const db = admin.firestore();
+
+console.log('Firebase Firestore connected successfully');
+
+// Helper function to convert Firestore Timestamp or Date to ISO string
+function toISOString(dateOrTimestamp) {
+  if (!dateOrTimestamp) return null;
+
+  // If it's a Firestore Timestamp
+  if (dateOrTimestamp.toDate && typeof dateOrTimestamp.toDate === 'function') {
+    return dateOrTimestamp.toDate().toISOString();
+  }
+
+  // If it's already a Date object
+  if (dateOrTimestamp instanceof Date) {
+    return dateOrTimestamp.toISOString();
+  }
+
+  // If it's a string, try to parse it
+  if (typeof dateOrTimestamp === 'string') {
+    return new Date(dateOrTimestamp).toISOString();
+  }
+
+  return null;
 }
 
 // Middleware
@@ -106,34 +71,45 @@ app.post('/api/auth/signup', async (req, res) => {
       return res.status(400).json({ message: 'All fields required' });
     }
 
+    // Check if email already exists
+    const usersRef = db.collection('users');
+    const emailQuery = await usersRef.where('email', '==', email).get();
+
+    if (!emailQuery.empty) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 12);
     const userId = Date.now().toString();
 
-    db.run(
-      'INSERT INTO users (id, email, password_hash, name, university) VALUES (?, ?, ?, ?, ?)',
-      [userId, email, hashedPassword, name, university],
-      function(err) {
-        if (err) {
-          if (err.message.includes('UNIQUE constraint failed')) {
-            return res.status(409).json({ message: 'Email already registered' });
-          }
-          return res.status(500).json({ message: err.message });
-        }
+    const userData = {
+      id: userId,
+      email,
+      password_hash: hashedPassword,
+      name,
+      university,
+      major: null,
+      graduation_year: null,
+      bio: null,
+      profile_picture_url: null,
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    };
 
-        const token = jwt.sign({ id: userId, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    await usersRef.doc(userId).set(userData);
 
-        res.status(201).json({
-          message: 'Signup successful',
-          token,
-          user: {
-            id: userId,
-            email,
-            name,
-            university
-          }
-        });
+    const token = jwt.sign({ id: userId, email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.status(201).json({
+      message: 'Signup successful',
+      token,
+      user: {
+        id: userId,
+        email,
+        name,
+        university
       }
-    );
+    });
   } catch (error) {
     console.error('Signup error:', error);
     res.status(500).json({ message: error.message });
@@ -141,7 +117,7 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -149,36 +125,37 @@ app.post('/api/auth/login', (req, res) => {
       return res.status(400).json({ message: 'Email and password required' });
     }
 
-    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
+    // Find user by email
+    const usersRef = db.collection('users');
+    const userQuery = await usersRef.where('email', '==', email).get();
+
+    if (userQuery.empty) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const userDoc = userQuery.docs[0];
+    const user = userDoc.data();
+
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        university: user.university,
+        major: user.major,
+        graduation_year: user.graduation_year,
+        bio: user.bio
       }
-
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
-
-      const validPassword = await bcrypt.compare(password, user.password_hash);
-
-      if (!validPassword) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
-
-      const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-      res.json({
-        message: 'Login successful',
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          university: user.university,
-          major: user.major,
-          graduation_year: user.graduation_year,
-          bio: user.bio
-        }
-      });
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -187,46 +164,47 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // Update profile
-app.put('/api/auth/profile/:id', (req, res) => {
+app.put('/api/auth/profile/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { major, graduation_year, bio } = req.body;
 
     console.log('Profile update request:', { id, major, graduation_year, bio });
 
-    db.run(
-      'UPDATE users SET major = ?, graduation_year = ?, bio = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [major || null, graduation_year || null, bio || null, id],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ message: err.message });
-        }
+    const userRef = db.collection('users').doc(id);
 
-        // Fetch updated user
-        db.get('SELECT * FROM users WHERE id = ?', [id], (err, user) => {
-          if (err) {
-            return res.status(500).json({ message: err.message });
-          }
+    await userRef.update({
+      major: major || null,
+      graduation_year: graduation_year || null,
+      bio: bio || null,
+      updated_at: admin.firestore.FieldValue.serverTimestamp()
+    });
 
-          // Generate token
-          const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Fetch updated user
+    const userDoc = await userRef.get();
 
-          res.json({
-            message: 'Profile updated',
-            token,
-            user: {
-              id: user.id,
-              email: user.email,
-              name: user.name,
-              university: user.university,
-              major: user.major,
-              graduation_year: user.graduation_year,
-              bio: user.bio
-            }
-          });
-        });
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = userDoc.data();
+
+    // Generate token
+    const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
+
+    res.json({
+      message: 'Profile updated',
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        university: user.university,
+        major: user.major,
+        graduation_year: user.graduation_year,
+        bio: user.bio
       }
-    );
+    });
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ message: error.message });
@@ -234,57 +212,69 @@ app.put('/api/auth/profile/:id', (req, res) => {
 });
 
 // Create Activity
-app.post('/api/activities', (req, res) => {
+app.post('/api/activities', async (req, res) => {
   try {
-    const { title, category, description, hostUserId, hostName, locationName, locationLat, locationLng, startDateTime, endDateTime, maxParticipants } = req.body;
+    const { title, category, description, hostUserId, hostName, hostUniversity, locationName, locationLat, locationLng, startDateTime, endDateTime, maxParticipants } = req.body;
 
-    if (!title || !category || !description || !hostUserId || !hostName || !locationName || !startDateTime || !maxParticipants) {
+    if (!title || !category || !description || !hostUserId || !hostName || !hostUniversity || !locationName || !startDateTime || !maxParticipants) {
       return res.status(400).json({ message: 'Missing required fields' });
     }
 
     const activityId = Date.now().toString();
-    const participants = JSON.stringify([hostUserId]);
+    const participants = [hostUserId];
 
-    db.run(
-      'INSERT INTO activities (id, title, category, description, host_user_id, host_name, location_name, location_lat, location_lng, start_date_time, end_date_time, max_participants, participants) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [activityId, title, category, description, hostUserId, hostName, locationName, locationLat || 0, locationLng || 0, startDateTime, endDateTime || null, maxParticipants, participants],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ message: err.message });
-        }
+    const activityData = {
+      id: activityId,
+      title,
+      category,
+      description,
+      hostUserId,
+      hostName,
+      hostUniversity,
+      locationName,
+      locationLat: locationLat || 0,
+      locationLng: locationLng || 0,
+      startDateTime: new Date(startDateTime),
+      endDateTime: endDateTime ? new Date(endDateTime) : null,
+      isInstant: false,
+      maxParticipants,
+      currentParticipants: 1,
+      status: 'open',
+      participants,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
 
-        // Fetch created activity
-        db.get('SELECT * FROM activities WHERE id = ?', [activityId], (err, activity) => {
-          if (err) {
-            return res.status(500).json({ message: err.message });
-          }
+    await db.collection('activities').doc(activityId).set(activityData);
 
-          res.status(201).json({
-            message: 'Activity created successfully',
-            activity: {
-              id: activity.id,
-              title: activity.title,
-              category: activity.category,
-              description: activity.description,
-              hostUserId: activity.host_user_id,
-              hostName: activity.host_name,
-              locationName: activity.location_name,
-              locationLat: activity.location_lat,
-              locationLng: activity.location_lng,
-              startDateTime: formatDateToISO8601(activity.start_date_time),
-              endDateTime: activity.end_date_time ? formatDateToISO8601(activity.end_date_time) : null,
-              isInstant: activity.is_instant === 1,
-              maxParticipants: activity.max_participants,
-              currentParticipants: activity.current_participants,
-              status: activity.status,
-              participants: JSON.parse(activity.participants),
-              createdAt: formatDateToISO8601(activity.created_at),
-              updatedAt: formatDateToISO8601(activity.updated_at)
-            }
-          });
-        });
+    // Fetch created activity
+    const activityDoc = await db.collection('activities').doc(activityId).get();
+    const activity = activityDoc.data();
+
+    res.status(201).json({
+      message: 'Activity created successfully',
+      activity: {
+        id: activity.id,
+        title: activity.title,
+        category: activity.category,
+        description: activity.description,
+        hostUserId: activity.hostUserId,
+        hostName: activity.hostName,
+        hostUniversity: activity.hostUniversity,
+        locationName: activity.locationName,
+        locationLat: activity.locationLat,
+        locationLng: activity.locationLng,
+        startDateTime: toISOString(activity.startDateTime),
+        endDateTime: toISOString(activity.endDateTime),
+        isInstant: activity.isInstant,
+        maxParticipants: activity.maxParticipants,
+        currentParticipants: activity.currentParticipants,
+        status: activity.status,
+        participants: activity.participants,
+        createdAt: toISOString(activity.createdAt) || new Date().toISOString(),
+        updatedAt: toISOString(activity.updatedAt) || new Date().toISOString()
       }
-    );
+    });
   } catch (error) {
     console.error('Create activity error:', error);
     res.status(500).json({ message: error.message });
@@ -292,7 +282,7 @@ app.post('/api/activities', (req, res) => {
 });
 
 // Join Activity
-app.put('/api/activities/:id/join', (req, res) => {
+app.put('/api/activities/:id/join', async (req, res) => {
   try {
     const { id } = req.params;
     const { userId } = req.body;
@@ -301,69 +291,57 @@ app.put('/api/activities/:id/join', (req, res) => {
       return res.status(400).json({ message: 'User ID is required' });
     }
 
-    // Fetch the activity
-    db.get('SELECT * FROM activities WHERE id = ?', [id], (err, activity) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
+    const activityRef = db.collection('activities').doc(id);
+    const activityDoc = await activityRef.get();
+
+    if (!activityDoc.exists) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    const activity = activityDoc.data();
+
+    // Check if user already joined
+    if (activity.participants.includes(userId)) {
+      return res.status(400).json({ message: 'Already joined this activity' });
+    }
+
+    // Add user to participants
+    const newParticipants = [...activity.participants, userId];
+    const newCurrentParticipants = activity.currentParticipants + 1;
+
+    await activityRef.update({
+      participants: newParticipants,
+      currentParticipants: newCurrentParticipants,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Fetch updated activity
+    const updatedActivityDoc = await activityRef.get();
+    const updatedActivity = updatedActivityDoc.data();
+
+    res.json({
+      message: 'Successfully joined activity',
+      activity: {
+        id: updatedActivity.id,
+        title: updatedActivity.title,
+        category: updatedActivity.category,
+        description: updatedActivity.description,
+        hostUserId: updatedActivity.hostUserId,
+        hostName: updatedActivity.hostName,
+        hostUniversity: updatedActivity.hostUniversity,
+        locationName: updatedActivity.locationName,
+        locationLat: updatedActivity.locationLat,
+        locationLng: updatedActivity.locationLng,
+        startDateTime: toISOString(updatedActivity.startDateTime),
+        endDateTime: toISOString(updatedActivity.endDateTime),
+        isInstant: updatedActivity.isInstant,
+        maxParticipants: updatedActivity.maxParticipants,
+        currentParticipants: updatedActivity.currentParticipants,
+        status: updatedActivity.status,
+        participants: updatedActivity.participants,
+        createdAt: toISOString(updatedActivity.createdAt) || new Date().toISOString(),
+        updatedAt: toISOString(updatedActivity.updatedAt) || new Date().toISOString()
       }
-
-      if (!activity) {
-        return res.status(404).json({ message: 'Activity not found' });
-      }
-
-      // Parse participants
-      let participants = JSON.parse(activity.participants);
-
-      // Check if user already joined
-      if (participants.includes(userId)) {
-        return res.status(400).json({ message: 'Already joined this activity' });
-      }
-
-      // Add user to participants
-      participants.push(userId);
-      const newCurrentParticipants = activity.current_participants + 1;
-
-      // Update activity
-      db.run(
-        'UPDATE activities SET participants = ?, current_participants = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [JSON.stringify(participants), newCurrentParticipants, id],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ message: err.message });
-          }
-
-          // Fetch updated activity
-          db.get('SELECT * FROM activities WHERE id = ?', [id], (err, updatedActivity) => {
-            if (err) {
-              return res.status(500).json({ message: err.message });
-            }
-
-            res.json({
-              message: 'Successfully joined activity',
-              activity: {
-                id: updatedActivity.id,
-                title: updatedActivity.title,
-                category: updatedActivity.category,
-                description: updatedActivity.description,
-                hostUserId: updatedActivity.host_user_id,
-                hostName: updatedActivity.host_name,
-                locationName: updatedActivity.location_name,
-                locationLat: updatedActivity.location_lat,
-                locationLng: updatedActivity.location_lng,
-                startDateTime: formatDateToISO8601(updatedActivity.start_date_time),
-                endDateTime: updatedActivity.end_date_time ? formatDateToISO8601(updatedActivity.end_date_time) : null,
-                isInstant: updatedActivity.is_instant === 1,
-                maxParticipants: updatedActivity.max_participants,
-                currentParticipants: updatedActivity.current_participants,
-                status: updatedActivity.status,
-                participants: JSON.parse(updatedActivity.participants),
-                createdAt: formatDateToISO8601(updatedActivity.created_at),
-                updatedAt: formatDateToISO8601(updatedActivity.updated_at)
-              }
-            });
-          });
-        }
-      );
     });
   } catch (error) {
     console.error('Join activity error:', error);
@@ -371,50 +349,128 @@ app.put('/api/activities/:id/join', (req, res) => {
   }
 });
 
+// Leave Activity
+app.put('/api/activities/:id/leave', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const activityRef = db.collection('activities').doc(id);
+    const activityDoc = await activityRef.get();
+
+    if (!activityDoc.exists) {
+      return res.status(404).json({ message: 'Activity not found' });
+    }
+
+    const activity = activityDoc.data();
+
+    // Check if user is a participant
+    if (!activity.participants.includes(userId)) {
+      return res.status(400).json({ message: 'You are not a participant of this activity' });
+    }
+
+    // Check if user is the host (host cannot leave their own activity)
+    if (activity.hostUserId === userId) {
+      return res.status(400).json({ message: 'Host cannot leave their own activity' });
+    }
+
+    // Check if activity starts in less than 1 hour
+    const startTime = activity.startDateTime.toDate ? activity.startDateTime.toDate() : new Date(activity.startDateTime);
+    const now = new Date();
+    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+
+    if (startTime <= oneHourFromNow) {
+      return res.status(400).json({ message: 'Cannot leave activity within 1 hour of start time' });
+    }
+
+    // Remove user from participants
+    const newParticipants = activity.participants.filter(id => id !== userId);
+    const newCurrentParticipants = activity.currentParticipants - 1;
+
+    await activityRef.update({
+      participants: newParticipants,
+      currentParticipants: newCurrentParticipants,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Fetch updated activity
+    const updatedActivityDoc = await activityRef.get();
+    const updatedActivity = updatedActivityDoc.data();
+
+    res.json({
+      message: 'Successfully left activity',
+      activity: {
+        id: updatedActivity.id,
+        title: updatedActivity.title,
+        category: updatedActivity.category,
+        description: updatedActivity.description,
+        hostUserId: updatedActivity.hostUserId,
+        hostName: updatedActivity.hostName,
+        hostUniversity: updatedActivity.hostUniversity,
+        locationName: updatedActivity.locationName,
+        locationLat: updatedActivity.locationLat,
+        locationLng: updatedActivity.locationLng,
+        startDateTime: toISOString(updatedActivity.startDateTime),
+        endDateTime: toISOString(updatedActivity.endDateTime),
+        isInstant: updatedActivity.isInstant,
+        maxParticipants: updatedActivity.maxParticipants,
+        currentParticipants: updatedActivity.currentParticipants,
+        status: updatedActivity.status,
+        participants: updatedActivity.participants,
+        createdAt: toISOString(updatedActivity.createdAt) || new Date().toISOString(),
+        updatedAt: toISOString(updatedActivity.updatedAt) || new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Leave activity error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get Activities
-app.get('/api/activities', (req, res) => {
+app.get('/api/activities', async (req, res) => {
   try {
     const { category } = req.query;
 
-    let query = 'SELECT * FROM activities';
-    let params = [];
+    let activitiesRef = db.collection('activities');
 
     if (category) {
-      query += ' WHERE category = ?';
-      params.push(category);
+      activitiesRef = activitiesRef.where('category', '==', category);
     }
 
-    query += ' ORDER BY start_date_time ASC';
+    const snapshot = await activitiesRef.orderBy('startDateTime', 'asc').get();
 
-    db.all(query, params, (err, activities) => {
-      if (err) {
-        return res.status(500).json({ message: err.message });
-      }
-
-      const formattedActivities = activities.map(activity => ({
+    const formattedActivities = snapshot.docs.map(doc => {
+      const activity = doc.data();
+      return {
         id: activity.id,
         title: activity.title,
         category: activity.category,
         description: activity.description,
-        hostUserId: activity.host_user_id,
-        hostName: activity.host_name,
-        locationName: activity.location_name,
-        locationLat: activity.location_lat,
-        locationLng: activity.location_lng,
-        startDateTime: formatDateToISO8601(activity.start_date_time),
-        endDateTime: activity.end_date_time ? formatDateToISO8601(activity.end_date_time) : null,
-        isInstant: activity.is_instant === 1,
-        maxParticipants: activity.max_participants,
-        currentParticipants: activity.current_participants,
+        hostUserId: activity.hostUserId,
+        hostName: activity.hostName,
+        hostUniversity: activity.hostUniversity,
+        locationName: activity.locationName,
+        locationLat: activity.locationLat,
+        locationLng: activity.locationLng,
+        startDateTime: toISOString(activity.startDateTime),
+        endDateTime: toISOString(activity.endDateTime),
+        isInstant: activity.isInstant,
+        maxParticipants: activity.maxParticipants,
+        currentParticipants: activity.currentParticipants,
         status: activity.status,
-        participants: JSON.parse(activity.participants),
-        createdAt: formatDateToISO8601(activity.created_at),
-        updatedAt: formatDateToISO8601(activity.updated_at)
-      }));
+        participants: activity.participants,
+        createdAt: toISOString(activity.createdAt) || new Date().toISOString(),
+        updatedAt: toISOString(activity.updatedAt) || new Date().toISOString()
+      };
+    });
 
-      res.json({
-        activities: formattedActivities
-      });
+    res.json({
+      activities: formattedActivities
     });
   } catch (error) {
     console.error('Get activities error:', error);
