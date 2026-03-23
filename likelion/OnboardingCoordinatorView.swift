@@ -104,9 +104,7 @@ struct OnboardingCoordinatorView: View {
                 )
 
                 // Update app state with new user data
-                if let token = response.token {
-                    appState.token = token
-                }
+                appState.token = response.token
 
                 // Move to next step
                 await MainActor.run {
@@ -136,9 +134,7 @@ struct OnboardingCoordinatorView: View {
                 )
 
                 // Update app state
-                if let token = response.token {
-                    appState.token = token
-                }
+                appState.token = response.token
 
                 // Update user with new info
                 await MainActor.run {
